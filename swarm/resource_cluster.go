@@ -64,6 +64,11 @@ func resourceCluster() *schema.Resource {
 							Required: true,
 							Elem:     &schema.Schema{Type: schema.TypeString},
 						},
+						"availability": {
+							Type:     schema.TypeString,
+							Optional: true,
+							Default:  "active",
+						},
 					},
 				},
 			},
@@ -99,12 +104,19 @@ func resourceClusterCreate(ctx context.Context, d *schema.ResourceData, m interf
 		for k, v := range node["tags"].(map[string]interface{}) {
 			tags[k] = v.(string)
 		}
+		var availability string
+		if value, ok := node["availability"].(string); !ok {
+			availability = swarm.ActiveAvailability
+		} else {
+			availability = value
+		}
 
 		vmnodes[i] = swarm.VMNode{
 			Hostname:       node["hostname"].(string),
 			PublicAddress:  node["public_address"].(string),
 			PrivateAddress: node["private_address"].(string),
 			Tags:           tags,
+			Availability:   availability,
 		}
 	}
 
@@ -207,11 +219,19 @@ func resourceClusterRead(ctx context.Context, d *schema.ResourceData, m interfac
 			tags[k] = v.(string)
 		}
 
+		var availability string
+		if value, ok := node["availability"].(string); !ok {
+			availability = swarm.ActiveAvailability
+		} else {
+			availability = value
+		}
+
 		vmnodes[i] = swarm.VMNode{
 			Hostname:       node["hostname"].(string),
 			PublicAddress:  node["public_address"].(string),
 			PrivateAddress: node["private_address"].(string),
 			Tags:           tags,
+			Availability:   availability,
 		}
 	}
 
@@ -263,6 +283,8 @@ func resourceClusterUpdate(ctx context.Context, d *schema.ResourceData, m interf
 
 	swarmManager := m.(*swarm.Manager)
 
+	force := d.Get("skip_manager_validation").(bool)
+
 	if d.HasChange("nodes") {
 		nodes := d.Get("nodes").([]interface{})
 		vmnodes := make(swarm.VMNodes, len(nodes))
@@ -274,17 +296,25 @@ func resourceClusterUpdate(ctx context.Context, d *schema.ResourceData, m interf
 				tags[k] = v.(string)
 			}
 
+			var availability string
+			if value, ok := node["availability"].(string); !ok {
+				availability = swarm.ActiveAvailability
+			} else {
+				availability = value
+			}
+
 			vmnodes[i] = swarm.VMNode{
 				Hostname:       node["hostname"].(string),
 				PublicAddress:  node["public_address"].(string),
 				PrivateAddress: node["private_address"].(string),
 				Tags:           tags,
+				Availability:   availability,
 			}
 		}
 
-		if swarmManager.Runner() == nil {
-			managers := vmnodes.FilterByTag(swarm.RoleTag, swarm.ManagerRole)
+		managers := vmnodes.FilterByTag(swarm.RoleTag, swarm.ManagerRole)
 
+		if swarmManager.Runner() == nil {
 			if err := swarmManager.SwitchNode(managers[0].PublicAddress); err != nil {
 				diags = append(diags, diag.Diagnostic{
 					Severity: diag.Error,
@@ -298,7 +328,18 @@ func resourceClusterUpdate(ctx context.Context, d *schema.ResourceData, m interf
 			}
 		}
 
-		if err := swarmManager.UpdateSwarm(vmnodes); err != nil {
+		if force {
+			diags = append(diags, diag.Diagnostic{
+				Severity: diag.Warning,
+				Summary:  "Skipping Manager validation",
+				Detail: fmt.Sprintf(
+					"Forcing creation of %d manager cluster (unsuitable for prod, or ineffective quorum)",
+					len(managers),
+				),
+			})
+		}
+
+		if err := swarmManager.UpdateSwarm(vmnodes, force); err != nil {
 			diags = append(diags, diag.Diagnostic{
 				Severity: diag.Error,
 				Summary:  "Unable to update swarm cluster",

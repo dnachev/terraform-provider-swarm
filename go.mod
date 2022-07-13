@@ -83,6 +83,6 @@ require (
 )
 
 replace (
-  github.com/aucloud/go-runcmd => github.com/dnachev/go-runcmd v0.0.0-20220712061459-9ce06155c453
-  github.com/aucloud/go-swarm => github.com/dnachev/go-swarm v0.0.0-20220712064632-2085d756edfd
+	github.com/aucloud/go-runcmd => github.com/dnachev/go-runcmd v0.0.0-20220712061459-9ce06155c453
+	github.com/aucloud/go-swarm => github.com/dnachev/go-swarm v0.0.0-20220713071828-6ab9aa8bcef9
 )
